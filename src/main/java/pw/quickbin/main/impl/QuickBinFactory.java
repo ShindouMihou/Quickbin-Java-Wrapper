@@ -24,7 +24,7 @@ public class QuickBinFactory implements QuickBin {
     private final String agent;
     private final ExecutorService service;
     private final OkHttpClient httpClient = new OkHttpClient();
-    private final String BASE_URL = "https://quickbin.pw/api/v1/bot.php";
+    private final String BASE_URL = "https://quickbin.pw/api/v2/bot/%s/";
 
     public QuickBinFactory(String token, String agent, ExecutorService service) {
         if (token == null || token.isEmpty())
@@ -49,9 +49,9 @@ public class QuickBinFactory implements QuickBin {
     @Override @Nullable
     public CompletableFuture<Bin> createBin(String content, String language) {
         return CompletableFuture.supplyAsync(() -> {
-            Request request = new Request.Builder().url(BASE_URL).header("User-Agent", agent).post(new MultipartBody.Builder().setType(MultipartBody.FORM)
-                    .addFormDataPart("token", token).addFormDataPart("content", content)
-                    .addFormDataPart("language", language).addFormDataPart("method", "insert").build()).build();
+            Request request = new Request.Builder().url(String.format(BASE_URL, "create") +
+                    language + '/').header("User-Agent", agent).post(new MultipartBody.Builder().setType(MultipartBody.FORM)
+                    .addFormDataPart("token", token).addFormDataPart("content", content).build()).build();
 
             // Parse response accordingly.
             try {
@@ -82,9 +82,28 @@ public class QuickBinFactory implements QuickBin {
      */
     @Override
     public CompletableFuture<Void> editBin(String bin, String content, String language){
-        return sendNormalRequest(new Request.Builder().url(BASE_URL).header("User-Agent", agent).post(new MultipartBody.Builder().setType(MultipartBody.FORM)
-                .addFormDataPart("token", token).addFormDataPart("content", content)
-                .addFormDataPart("language", language).addFormDataPart("bin", bin).addFormDataPart("method", "edit").build()).build());
+        StringBuilder s = new StringBuilder(String.format(BASE_URL, "edit")).append(bin)
+                .append("/");
+
+        if(language != null){
+            s.append(language).append("/");
+        }
+
+        return sendNormalRequest(new Request.Builder().url(s.toString()).header("User-Agent", agent).post(new MultipartBody.Builder().setType(MultipartBody.FORM)
+                .addFormDataPart("token", token).addFormDataPart("content", content).build()).build());
+    }
+
+    /**
+     * Edits a bin if it exists and is also owned by your token.
+     * @throws InvalidRequestException when the request is invalid.
+     * @throws RateLimitedException when you are rate-limited (1,000 requests a day).
+     * @param bin the bin to edit.
+     * @param content the new contents of the bin.
+     * @return CompletableFuture<Void>
+     */
+    @Override
+    public CompletableFuture<Void> editBin(String bin, String content){
+        return editBin(bin, content, null);
     }
 
     /**
@@ -96,8 +115,9 @@ public class QuickBinFactory implements QuickBin {
      */
     @Override
     public CompletableFuture<Void> deleteBin(String bin){
-        return sendNormalRequest(new Request.Builder().url(BASE_URL).header("User-Agent", agent).post(new MultipartBody.Builder().setType(MultipartBody.FORM)
-                .addFormDataPart("token", token).addFormDataPart("bin", bin).addFormDataPart("method", "delete").build()).build());
+        return sendNormalRequest(new Request.Builder().url(new StringBuilder(String.format(BASE_URL, "edit")).append(bin)
+                .append("/").toString()).header("User-Agent", agent).post(new MultipartBody.Builder().setType(MultipartBody.FORM)
+                .addFormDataPart("token", token).addFormDataPart("bin", bin).build()).build());
     }
 
     private CompletableFuture<Void> sendNormalRequest(Request request) {
@@ -108,6 +128,7 @@ public class QuickBinFactory implements QuickBin {
                         if (response.code() != 200) {
                             throw (response.code() == 429 ? new RateLimitedException(true) : new InvalidRequestException(new JSONObject(response.body().string()).getString("response")));
                         }
+                        System.out.println(response.body().string());
                     }
             } catch (Exception exception) {
                 throw new CompletionException(exception);
